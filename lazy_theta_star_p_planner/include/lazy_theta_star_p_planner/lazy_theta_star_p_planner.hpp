@@ -60,7 +60,7 @@ public:
     const geometry_msgs::msg::PoseStamped & goal) override;
 
 private:
-  double interpolation_dist_;
+
   std::unique_ptr<lazyThetaStarP::LazyThetaStarP> planner_;
 
   void getPlan(nav_msgs::msg::Path & global_path);
@@ -69,7 +69,12 @@ private:
     const geometry_msgs::msg::PoseStamped & start,
     const geometry_msgs::msg::PoseStamped & goal);
 
-
+  /**
+   * @brief linearily interpolates between the adjacent waypoints of the path
+   * @param raw_path is used to send in the path recieved from the planner
+   * @param dist_bw_points is used to send in the interpolation_resolution
+   * @return the final path with waypoints at a distance of the value of interpolation_resolution of each other
+   */
   static nav_msgs::msg::Path linearInterpolation(
     const std::vector<coordsW> & raw_path,
     const double & dist_bw_points);

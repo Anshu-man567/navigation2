@@ -16,88 +16,79 @@
 #define LAZY_THETA_STAR_P_PLANNER__LAZY_THETA_STAR_P_HPP_
 
 #include <cmath>
+#include <chrono>
 #include <vector>
 #include <queue>
 #include <algorithm>
 #include "rclcpp/rclcpp.hpp"
 #include "nav2_costmap_2d/costmap_2d_ros.hpp"
 
-typedef int id;
-typedef double cost;
-typedef int map_pts;
-typedef double world_pts;
 const double INF_COST = DBL_MAX;
-const int LETHAL_COST = 252;
+const int LETHAL_COST = 253;
 
-struct coordsM
-{
-  map_pts x, y;
+struct coordsM {
+  int x, y;
 };
 
-struct coordsW
-{
-  world_pts x, y;
+struct coordsW {
+  double x, y;
 };
 
-struct pos
-{
-  id pos_id;
-  cost f;
+struct pos {
+  int pos_id;
+  double f;
 };
 
-struct tree_node
-{
-  map_pts x, y;
-  cost g = INF_COST;
-  cost h = INF_COST;
-  id parent_id;
+struct tree_node {
+  int x, y;
+  double g = INF_COST;
+  double h = INF_COST;
+  int parent_id;
   bool is_in_queue = false;
-  cost f = INF_COST;
+  double f = INF_COST;
 };
 
-struct comp
-{
-  bool operator()(pos & p1, pos & p2)
-  {
-    return (p1.f) > (p2.f);
+struct comp {
+  bool operator()(pos & p1, pos & p2) {
+	return (p1.f) > (p2.f);
   }
 };
 
-namespace lazyThetaStarP
-{
-class LazyThetaStarP
-{
+/// TODO(ANSHU-MAN567): try using a pointer to the tree_node vector instead of directly using it
+
+namespace lazyThetaStarP {
+class LazyThetaStarP {
 private:
-  // for the coordinates (x,y), we store at node_position[size_x * y + x],
-  // the index at which the data of the node is present in nodes_data
-  std::vector<id> node_position;
-  
-  // the vector nodes_data stores the coordinates, costs and index of the parent node,
-  // and whether or not the node is present in queue_
+  /// for the coordinates (x,y), we store at node_position[size_x * y + x],
+  /// the index at which the data of the node is present in nodes_data
+  std::vector<int> node_position;
+  std::vector<tree_node*> node_ref;
+  /// the vector nodes_data stores the coordinates, costs and index of the parent node,
+  /// and whether or not the node is present in queue_
   std::vector<tree_node> nodes_data;
-  
-  // this is the priority queue to select the next node for expansion
+
+  /// this is the priority queue to select the next node for expansion
   std::priority_queue<pos, std::vector<pos>, comp> queue_;
 
+  /// it is a counter like variable used to give out the index
+  /// at which data will be stored for a node that is being expanded
+  int index_generated;
 
-  // it is a counter like variable used to give out the index
-  // at which data will be stored for a node that is being expanded
-  id index_generated;
-  
   /// CAN BE ADDED :
   /// could make it a linear array of id's, if the coordinates are also going to be
   /// denoted by an index -> size_x * y_coord + x_coord
-  /// this would help to reduce the number of elements in the tree_node struct and slightly faster
-  /// resetting of the values
+  /// this would help to reduce the number of elements in the tree_node struct and make resetting of the values
+  /// slightly faster in initializePosn()
   const coordsM moves[8] = {{0, 1},
-    {0, -1},
-    {1, 0},
-    {-1, 0},
-    {1, -1},
-    {-1, 1},
-    {1, 1},
-    {-1, -1}};
+							{0, -1},
+							{1, 0},
+							{-1, 0},
+							{1, -1},
+							{-1, 1},
+							{1, 1},
+							{-1, -1}};
 
+  tree_node *curr_node = new tree_node;
   /** @brief it does a line of sight (los) check between the current node and the parent of its parent node
    * 		if an los is found and the new costs calculated are lesser then the cost and parent node of the current node
    * 		is updated
@@ -110,14 +101,14 @@ private:
    * @param curr_data used to send the data of the current node
    * @param curr_id used to send the index of the current node as stored in nodes_position
    */
-  void setNeighbors(const tree_node & curr_data, const id & curr_id);
+  void setNeighbors(const tree_node & curr_data, const int & curr_int);
 
   /**
    * @brief it returns the path by backtracing from the goal to the start, by using their parent nodes
    * @param raw_points used to return the path  thus found
    * @param curr_id sends in the index of the goal coordinate, as stored in nodes_position
    */
-  void backtrace(std::vector<coordsW> & raw_points, id curr_id);
+  void backtrace(std::vector<coordsW> & raw_points, int curr_id);
 
   /**
    * @brief performs the line of sight check using Bresenham's Algorithm,
@@ -127,76 +118,95 @@ private:
    * @return true if a line of sight exists between the points
    */
   bool losCheck(
-    const map_pts & x0, const map_pts & y0, const map_pts & x1, const map_pts & y1,
-    cost & sl_cost) const;
+	  const int & x0, const int & y0, const int & x1, const int & y1,
+	  double & sl_cost);
 
-  cost dist(const map_pts & ax, const map_pts & ay, const map_pts & bx, const map_pts & by)
-  {
-    return std::hypot(ax - bx, ay - by);
+//  bool losCheck2_(
+//	  const int & x0,
+//	  const int & y0,
+//	  const int & x1,
+//	  const int & y1,
+//	  double & sl_cost) const;
+
+  double dist(const int & ax, const int & ay, const int & bx, const int & by) {
+	return std::hypot(ax - bx, ay - by);
+  }
+
+  double getEucledianCost(const int & ax, const int & ay, const int & bx, const int & by) {
+	double g_cost = dist(ax, ay, bx, by);
+	return euc_tolerance_ * g_cost;
   }
 
   /**
    * @brief for the point(cx, cy) its traversal cost is calculated by <parameter>*(<actual_traversal_cost_from_costmap>)^2/(<max_cost>)^2
    * @return the traversal cost thus calculated
    */
-  cost getCost(const cost & cx, const cost & cy) const
-  {
-    return costmap_tolerance_ *
-           costmap_->getCost(cx, cy) * costmap_->getCost(cx, cy) / LETHAL_COST / LETHAL_COST;
+  /// make this more like the below function tooo !!
+
+  double getCellCost(const int & cx, const int & cy) const {
+    return costmap_->getCost(cx + 1, cy + 1);
+  }
+  double getTraversalCost(const int & cx, const int & cy)  {
+	double curr_cost =  getCellCost(cx, cy);
+	return costmap_tolerance_ * curr_cost * curr_cost / LETHAL_COST / LETHAL_COST;
+  }
+// TODO (Anshu-man567) : why do you need to call the function twice!!
+  bool isSafe(const int & cx, const int & cy, double & cost) const {
+	double curr_cost = getCellCost(cx, cy); // here
+	if ( curr_cost < LETHAL_COST ) { 				// and here
+	  cost += costmap_tolerance_ * curr_cost * curr_cost /LETHAL_COST /LETHAL_COST;
+	  return true;
+	} else
+	  return false;
   }
 
-  void addIndex(const map_pts & cx, const map_pts & cy, const id & id_this)
-  {
-    node_position[size_x * cy + cx] = id_this;
+  void addIndex(const int & cx, const int & cy, const int & id_this) {
+	node_position[size_x_ * cy + cx] = id_this;
   }
 
-  void getIndex(const map_pts & cx, const map_pts & cy, id & id_this)
-  {
-    id_this = node_position[size_x * cy + cx];
+  void getIndex(const int & cx, const int & cy, int & id_this) {
+	id_this = node_position[size_x_ * cy + cx];
   }
 
-  bool withinLimits(const map_pts & cx, const map_pts & cy) const
-  {
-    return cx >= 0 && cx < size_x && cy >= 0 && cy < size_y;
+  bool withinLimits(const int & cx, const int & cy) const {
+	return cx >= 0 && cx < size_x_ && cy >= 0 && cy < size_y_;
   }
 
-  bool isGoal(const map_pts & cx, const map_pts & cy) const
-  {
-    return cx == dst.x && cy == dst.y;
+  bool isGoal(const int & cx, const int & cy) const {
+	return cx == dst.x && cy == dst.y;
   }
 
-  cost maxCost(const cost & a, const cost & b) const
-  {
-    if (a > b) {return a; } else {return b; }
+  void addToNodesData(const int & id_this) {
+	if (nodes_data.size() <= static_cast<unsigned int>(id_this)) {
+	  nodes_data.push_back({});
+	} else {
+	  nodes_data[id_this] = {};
+	}
   }
 
-  void addToNodesData(const id & id_this)
-  {
-    if (nodes_data.size() <= static_cast<unsigned int>(id_this)) {
-      nodes_data.push_back({});
-    } else {
-      nodes_data[id_this] = {};
-    }
+  void clearQueue() {
+    auto start = std::chrono::steady_clock::now();
+	while (!queue_.empty())
+	{
+	  queue_.pop();
+	}
+	auto stop = std::chrono::steady_clock::now();
+	auto dur_clear_q = (std::chrono::duration_cast<std::chrono::microseconds>(stop-start));
+	std::cout<< "dur_clear_q       " << dur_clear_q.count() << '\n';
   }
 
-  void clearQueue()
-  {
-    while (!queue_.empty()) {
-      queue_.pop();
-    }
-  }
+  void initializePosn(int size_inc = 0) {
 
-  void initializePosn(int size_inc = 0)
-  {
     int i = 0;
-    if (!node_position.empty()) {
-      for (; i < size_x * size_y; i++) {
-        node_position[i] = -1;
-      }
-    }
-    for (; i < size_inc; i++) {
-      node_position.emplace_back(-1);
-    }
+	if (!node_position.empty()) {
+	  for (; i < size_x_ * size_y_; i++) {
+		node_position[i] = -1;
+	  }
+	}
+
+	for (; i < size_inc; i++) {
+	  node_position.emplace_back(-1);
+	}
   }
 
   void setContainers();
@@ -204,18 +214,18 @@ private:
 public:
 
   coordsM src{}, dst{};
-  nav2_costmap_2d::Costmap2D * costmap_{};
+  nav2_costmap_2d::Costmap2D *costmap_{};
   nav2_util::LifecycleNode::SharedPtr node_;
 
   int how_many_corners_;
-  int size_x, size_y;
+  int size_x_, size_y_;
 
-  // parameter for cost of costmap traversal
-  cost costmap_tolerance_;
-  // parameter for distance function used for heurestic
-  cost euc_tolerance_2_;
-  // parameter for distance function used for distance function cost from the source to the current node
-  cost euc_tolerance_;
+  /// parameter for cost of costmap traversal
+  double costmap_tolerance_;
+  /// parameter for distance function used for distance function cost from the source to the current node
+  double euc_tolerance_;
+  // parameter used to prefer staright lines paths - has been discontinued
+  double bias_;
 
   LazyThetaStarP();
 
@@ -227,10 +237,10 @@ public:
    */
   bool generatePath(std::vector<coordsW> & raw_path);
 
-  bool isSafe(const map_pts & cx, const map_pts & cy) const
-  {
-    return costmap_->getCost(cx, cy) < LETHAL_COST;
+  bool isSafe(const int & cx, const int & cy) const {
+    return costmap_->getCost(cx + 1, cy + 1 ) < LETHAL_COST;
   }
+
 };
 }   //  namespace lazyThetaStarP
 
